@@ -2,7 +2,7 @@ import ctypes
 from tkinter import *
 
 # 載入 DLL（根據作業系統調整）
-lib = ctypes.CDLL(r"C:\Users\恩彤\Desktop\程設\程式設計期末\todo.dll")
+lib = ctypes.CDLL(r"./dll/todo.dll")
 
 
 # 宣告函式原型
