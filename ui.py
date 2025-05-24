@@ -4,8 +4,8 @@ from ctypes import c_char_p, c_int
 
 # Load compiled C library
 # 把路徑換成你電腦裡to.dll的路徑
-lib = ctypes.CDLL("C:/Users/USER/Desktop/todo.dll")  # Or "./todo.so" on Linux/macOS
-# "C:\Users\USER\Desktop\todo.dll"
+lib = ctypes.CDLL("C:/Users/USER/Documents/GitHub/todolist/todo.dll")  # Or "./todo.so" on Linux/macOS
+
 # Define C function interfaces
 lib.add_task.argtypes = [c_char_p, c_char_p]
 lib.add_task.restype = c_int
