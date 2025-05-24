@@ -1,1 +1,1 @@
-## Use `build_all.py` to compile `todo.c` by simply running it. If you have *pyinstaller* installed in your computer, it'll even make you a .exe file. If not, you can still run `ui.py` to execute the program.
+### Use `build_all.py` to compile `todo.c` by simply running it. If you have *pyinstaller* installed in your computer, it'll even make you a .exe file. If not, you can still run `ui.py` to execute the program.
