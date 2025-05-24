@@ -66,21 +66,21 @@ python build_all.py
 If PyInstaller is installed, this will generate an `.exe` in the `dist/` folder.
 
 ## 🛠 How the Build Works
-`build_all.py` checks your Python architecture (32-bit or 64-bit)
+- `build_all.py` checks your Python architecture (32-bit or 64-bit)
 
-Shows correct compile commands
+- Shows correct compile commands
 
-Compiles `todo.c` into `todo.dll`
+- Compiles `todo.c` into `todo.dll`
 
-Optionally builds a `.exe` using PyInstaller
+- Optionally builds a `.exe` using PyInstaller
 
-Creates a `build_log.txt` for diagnostics
+- Creates a `build_log.txt` for diagnostics
 
 You can run it even if PyInstaller is not installed — it’ll still compile the DLL and guide you through setup.
 
-📎 Notes
-Only the compiled `.dll` is used at runtime; no Python logic is re-implemented in C
+## 📎 Notes
+- Only the compiled `.dll` is used at runtime; no Python logic is re-implemented in C
 
-All tasks are stored in memory — no save/load to disk (yet)
+- All tasks are stored in memory — no save/load to disk (yet)
 
-This project is a learning/demo tool, but can be expanded
+- This project is a learning/demo tool, but can be expanded
