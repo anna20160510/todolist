@@ -70,10 +70,13 @@ def update_task_list():
 # Add a new task
 def add_task():
     desc = desc_entry.get().strip()
-    due = due_entry.get().strip()
-    if not desc or not due:
-        print("Please fill in both fields.")
+    due = due_entry.get().strip() # due date can be empty (截止日期現在可以為空)
+
+    if not desc: # Only description is mandatory now (現在只有描述是必填項)
+        print("Please enter a task description.")
         return
+
+    # Pass an empty string if due date is empty (如果截止日期為空，傳遞空字串給 C 函式)
     if lib.add_task(desc.encode(), due.encode()) >= 0:
         update_task_list()
         desc_entry.delete(0, tk.END)
@@ -102,11 +105,13 @@ def update_task():
 
     index = sel[0]
     new_desc = desc_entry.get().strip()
-    new_due = due_entry.get().strip()
-    if not new_desc or not new_due:
-        print("Fill in both fields.")
+    new_due = due_entry.get().strip() # New due date can be empty (新截止日期可以為空)
+
+    if not new_desc: # Only new description is mandatory (現在只有新描述是必填項)
+        print("Please enter a new task description.")
         return
 
+    # Pass an empty string if new_due is empty (如果新截止日期為空，傳遞空字串給 C 函式)
     if lib.update_task(index, new_desc.encode(), new_due.encode()) == 0:
         update_task_list()
 
