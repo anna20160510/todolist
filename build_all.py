@@ -65,6 +65,18 @@ def check_existing_dll(py_arch):
 
 def compile_c():
     print("\n[Compiling] Building todo.dll...")
+
+    # Clean up old DLL and .a file
+    for file in [DLL_NAME, "libtodo.a"]:
+        if os.path.exists(file):
+            try:
+                os.remove(file)
+                print(f"Removed old {file}")
+            except Exception as e:
+                print(f"Could not delete {file}: {e}")
+                sys.exit(1)
+
+    # Now compile
     result = subprocess.run([
         "gcc",
         "-shared", "-o", DLL_NAME,
