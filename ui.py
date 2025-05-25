@@ -1,10 +1,40 @@
 import tkinter as tk
 import ctypes
 from ctypes import c_char_p, c_int
+import sys
+import os
+import traceback
 
-# Load compiled C library
-# 把路徑換成你電腦裡to.dll的路徑
-lib = ctypes.CDLL("C:/Users/USER/Documents/GitHub/todolist/todo.dll")  # Or "./todo.so" on Linux/macOS
+"""
+    Dynamically locates and loads the compiled C library (todo.dll).
+
+    This function ensures compatibility with both:
+    - Direct script execution (e.g. python ui.py)
+    - PyInstaller builds (which extract the DLL to a temporary folder)
+
+    Just make sure the correct version of the DLL (32-bit or 64-bit) is compiled for your system.
+"""
+
+def get_dll_path(dll_name="todo.dll"):
+    if getattr(sys, 'frozen', False):
+        # PyInstaller bundle — DLL extracted to temp folder
+        return os.path.join(sys._MEIPASS, dll_name)
+    else:
+        # Normal script — DLL next to the .py file
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), dll_name)
+
+
+# Optional error logging
+if getattr(sys, 'frozen', False):
+    try:
+        # your normal app logic starts here
+        pass
+    except Exception as e:
+        with open("error.log", "w") as f:
+            f.write(traceback.format_exc())
+        raise
+
+lib = ctypes.CDLL(get_dll_path())
 
 # Define C function interfaces
 lib.add_task.argtypes = [c_char_p, c_char_p]
