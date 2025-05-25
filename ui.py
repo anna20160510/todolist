@@ -5,16 +5,12 @@ import sys
 import os
 import traceback
 
-"""
-    Dynamically locates and loads the compiled C library (todo.dll).
-
-    This function ensures compatibility with both:
-    - Direct script execution (e.g. python ui.py)
-    - PyInstaller builds (which extract the DLL to a temporary folder)
-
-    Just make sure the correct version of the DLL (32-bit or 64-bit) is compiled for your system.
-"""
-
+# --- DLL Path Helper Function ---
+# Dynamically locates and loads the compiled C library (todo.dll).
+# This function ensures compatibility with both:
+# - Direct script execution (e.g. python ui.py)
+# - PyInstaller builds (which extract the DLL to a temporary folder)
+# Just make sure the correct version of the DLL (32-bit or 64-bit) is compiled for your system.
 def get_dll_path(dll_name="todo.dll"):
     if getattr(sys, 'frozen', False):
         # PyInstaller bundle — DLL extracted to temp folder
@@ -23,20 +19,29 @@ def get_dll_path(dll_name="todo.dll"):
         # Normal script — DLL next to the .py file
         return os.path.join(os.path.dirname(os.path.abspath(__file__)), dll_name)
 
-
-# Optional error logging
+# --- Optional Error Logging for PyInstaller Builds ---
+# This block catches unhandled exceptions and writes them to an error.log file,
+# which is useful for debugging issues in bundled applications.
 if getattr(sys, 'frozen', False):
     try:
-        # your normal app logic starts here
+        # Your normal app logic would start here, but for this simple script,
+        # it mostly encompasses the entire execution after imports.
         pass
     except Exception as e:
         with open("error.log", "w") as f:
             f.write(traceback.format_exc())
-        raise
+        raise # Re-raise the exception after logging it
 
-lib = ctypes.CDLL(get_dll_path())
+# --- Load C Library and Define Function Interfaces ---
+# Ensure the DLL is in the same directory as this script, or in a system PATH.
+try:
+    lib = ctypes.CDLL(get_dll_path())
+except Exception as e:
+    print(f"Error loading C library: {e}")
+    print(f"Make sure '{get_dll_path()}' exists and is compiled for your system architecture.")
+    sys.exit(1)
 
-# Define C function interfaces
+# Define argument and return types for C functions using ctypes
 lib.add_task.argtypes = [c_char_p, c_char_p]
 lib.add_task.restype = c_int
 
@@ -47,7 +52,10 @@ lib.mark_done.argtypes = [c_int]
 lib.mark_done.restype = c_int
 
 lib.delete_task.argtypes = [c_int]
-lib.delete_task.restype = c_int
+lib.delete_task.restype = c_int # Corrected from previous error
+
+# New C function for clearing completed tasks
+lib.clear_completed_tasks.restype = None
 
 lib.get_task_count.restype = c_int
 lib.get_task_desc.argtypes = [c_int]
@@ -57,7 +65,10 @@ lib.is_task_done.restype = c_int
 lib.get_task_due_date.argtypes = [c_int]
 lib.get_task_due_date.restype = c_char_p
 
-# Update the displayed task list
+# --- Core Task Management Functions (Python Wrappers) ---
+
+# Updates the displayed task list in the Tkinter Listbox.
+# Implements Feature 2: If no due date, don't show "(Due: )".
 def update_task_list():
     task_listbox.delete(0, tk.END)
     for i in range(lib.get_task_count()):
@@ -65,38 +76,46 @@ def update_task_list():
         due = lib.get_task_due_date(i).decode()
         done = lib.is_task_done(i)
         symbol = "✔️" if done else "❌"
-        task_listbox.insert(tk.END, f"{symbol} {desc} (Due: {due})")
 
-# Add a new task
+        # Construct the due date display string
+        due_display = f" (Due: {due})" if due else "" # Only show " (Due: ...)" if a due date exists
+        task_listbox.insert(tk.END, f"{symbol} {desc}{due_display}")
+
+# Adds a new task using the C library function.
 def add_task():
     desc = desc_entry.get().strip()
-    due = due_entry.get().strip() # due date can be empty (截止日期現在可以為空)
+    due = due_entry.get().strip()
 
-    if not desc: # Only description is mandatory now (現在只有描述是必填項)
+    if not desc:
         print("Please enter a task description.")
         return
 
-    # Pass an empty string if due date is empty (如果截止日期為空，傳遞空字串給 C 函式)
+    # Pass an empty string if due date is empty
     if lib.add_task(desc.encode(), due.encode()) >= 0:
         update_task_list()
         desc_entry.delete(0, tk.END)
         due_entry.delete(0, tk.END)
 
-# Mark task as done
+# Marks the selected task as done using the C library function.
 def mark_task_done():
     sel = task_listbox.curselection()
     if sel:
         lib.mark_done(sel[0])
         update_task_list()
 
-# Delete selected task
+# Deletes the selected task using the C library function.
 def delete_task():
     sel = task_listbox.curselection()
     if sel:
         lib.delete_task(sel[0])
         update_task_list()
 
-# Update task's description and due date
+# Implements Feature 1: Clears all tasks marked as completed.
+def clear_completed():
+    lib.clear_completed_tasks() # Call the new C function
+    update_task_list()          # Refresh the list after clearing
+
+# Updates the description and/or due date of the selected task.
 def update_task():
     sel = task_listbox.curselection()
     if not sel:
@@ -105,17 +124,17 @@ def update_task():
 
     index = sel[0]
     new_desc = desc_entry.get().strip()
-    new_due = due_entry.get().strip() # New due date can be empty (新截止日期可以為空)
+    new_due = due_entry.get().strip()
 
-    if not new_desc: # Only new description is mandatory (現在只有新描述是必填項)
+    if not new_desc:
         print("Please enter a new task description.")
         return
 
-    # Pass an empty string if new_due is empty (如果新截止日期為空，傳遞空字串給 C 函式)
+    # Pass an empty string if new_due is empty
     if lib.update_task(index, new_desc.encode(), new_due.encode()) == 0:
         update_task_list()
 
-# Fill entry fields when selecting a task
+# Populates entry fields when a task is selected in the Listbox.
 def fill_fields_on_select(event):
     sel = task_listbox.curselection()
     if sel:
@@ -129,12 +148,19 @@ def fill_fields_on_select(event):
         due_entry.delete(0, tk.END)
         due_entry.insert(0, due)
 
-# Clear fields when clicking outside tasks
+# Clears entry fields and selection if user clicks outside of a task item.
 def handle_click(event):
+    # This uses root.after to ensure the Listbox selection event processes first,
+    # then checks if a non-item area was clicked.
     def clear_if_not_on_item():
-        index = task_listbox.nearest(event.y)
-        bbox = task_listbox.bbox(index)
+        try:
+            index = task_listbox.nearest(event.y)
+            bbox = task_listbox.bbox(index) # Get bounding box of the item near click
+        except Exception:
+            # If no item is found (e.g., listbox is empty), bbox will fail
+            bbox = None
 
+        # Check if the click was outside any item's bounding box or if no item was found
         if not bbox or event.y < bbox[1] or event.y > bbox[1] + bbox[3]:
             task_listbox.selection_clear(0, tk.END)
             desc_entry.delete(0, tk.END)
@@ -147,26 +173,34 @@ def handle_click(event):
 root = tk.Tk()
 root.title("To-Do List Manager")
 
-task_listbox = tk.Listbox(root, width=60, height=10)
-task_listbox.pack(pady=10)
-task_listbox.bind('<<ListboxSelect>>', fill_fields_on_select)
-task_listbox.bind("<Button-1>", handle_click)
+# Task Listbox
+task_listbox = tk.Listbox(root, width=60, height=10, font=('Arial', 10))
+task_listbox.pack(pady=10, padx=10)
+task_listbox.bind('<<ListboxSelect>>', fill_fields_on_select) # Event for selecting an item
+task_listbox.bind("<Button-1>", handle_click) # Event for any mouse click
 
-tk.Label(root, text="Task Description:").pack()
-desc_entry = tk.Entry(root, width=40)
-desc_entry.pack()
+# Input Fields
+tk.Label(root, text="Task Description:").pack(pady=(0, 2))
+desc_entry = tk.Entry(root, width=50, font=('Arial', 10))
+desc_entry.pack(pady=(0, 5))
 
-tk.Label(root, text="Due Date (YYYY-MM-DD HH:MM):").pack()
-due_entry = tk.Entry(root, width=40)
-due_entry.pack()
+tk.Label(root, text="Due Date (YYYY-MM-DD HH:MM):").pack(pady=(0, 2))
+due_entry = tk.Entry(root, width=50, font=('Arial', 10))
+due_entry.pack(pady=(0, 10))
 
+# Buttons Frame
 btn_frame = tk.Frame(root)
-btn_frame.pack(pady=10)
+btn_frame.pack(pady=5)
 
-tk.Button(btn_frame, text="Add Task", command=add_task).pack(side=tk.LEFT, padx=5)
-tk.Button(btn_frame, text="Update Task", command=update_task).pack(side=tk.LEFT, padx=5)
-tk.Button(btn_frame, text="Mark as Done", command=mark_task_done).pack(side=tk.LEFT, padx=5)
-tk.Button(btn_frame, text="Delete Task", command=delete_task).pack(side=tk.LEFT, padx=5)
+# Buttons
+tk.Button(btn_frame, text="Add Task", command=add_task, width=15).pack(side=tk.LEFT, padx=5, pady=5)
+tk.Button(btn_frame, text="Update Task", command=update_task, width=15).pack(side=tk.LEFT, padx=5, pady=5)
+tk.Button(btn_frame, text="Mark as Done", command=mark_task_done, width=15).pack(side=tk.LEFT, padx=5, pady=5)
+tk.Button(btn_frame, text="Delete Task", command=delete_task, width=15).pack(side=tk.LEFT, padx=5, pady=5)
+tk.Button(btn_frame, text="Clear Completed", command=clear_completed, width=15).pack(side=tk.LEFT, padx=5, pady=5) # New button for Feature 1
 
+# Initial population of the task list
 update_task_list()
+
+# Start the Tkinter event loop
 root.mainloop()
