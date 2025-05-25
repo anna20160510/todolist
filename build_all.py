@@ -3,7 +3,6 @@ import sys
 import subprocess
 import shutil
 import struct
-import platform
 import io
 
 try:
