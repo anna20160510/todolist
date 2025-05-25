@@ -10,6 +10,7 @@ typedef struct {
     char desc[MAX_LEN];
     int done;
     char due_date[MAX_LEN]; // format: YYYY-MM-DD HH:MM
+    int has_due_date;           // 0 for no due date, 1 for has due date
 } Task;
 
 static Task tasks[MAX_TASKS];
@@ -37,8 +38,18 @@ int compare_due_date(const void *a, const void *b) {
     const Task *task_a = (const Task*)a;
     const Task *task_b = (const Task*)b;
 
+ // Tasks without a due date are sorted to the end of the list
+    if (task_a->has_due_date == 0 && task_b->has_due_date == 1) return 1;  // A has no date, B has date -> A comes after B
+    if (task_a->has_due_date == 1 && task_b->has_due_date == 0) return -1; // A has date, B has no date -> A comes before B
+    if (task_a->has_due_date == 0 && task_b->has_due_date == 0) return 0;  // Both have no date -> they are equal in terms of date
+
     time_t time_a = get_time_from_string(task_a->due_date);
     time_t time_b = get_time_from_string(task_b->due_date);
+
+    // Handle potential parsing errors if any were to occur (though sscanf is used carefully)
+    if (time_a == (time_t)-1 && time_b != (time_t)-1) return 1; // A parsing failed, B didn't -> A comes after B
+    if (time_a != (time_t)-1 && time_b == (time_t)-1) return -1; // A didn't fail, B did -> A comes before B
+    if (time_a == (time_t)-1 && time_b == (time_t)-1) return 0; // Both parsing failed -> they are equal
 
     return (time_a > time_b) - (time_a < time_b);
 }
@@ -52,8 +63,18 @@ int add_task(const char* desc, const char* due_date) {
 
     strncpy(tasks[task_count].desc, desc, MAX_LEN - 1);
     tasks[task_count].desc[MAX_LEN - 1] = '\0';
-    strncpy(tasks[task_count].due_date, due_date, MAX_LEN - 1);
-    tasks[task_count].due_date[MAX_LEN - 1] = '\0';
+
+    // If due_date is an empty string, set has_due_date to 0
+    if (due_date == NULL || strlen(due_date) == 0) {
+        tasks[task_count].due_date[0] = '\0'; // Ensure the string is empty
+        tasks[task_count].has_due_date = 0;
+    } else {
+        strncpy(tasks[task_count].due_date, due_date, MAX_LEN - 1);
+        tasks[task_count].due_date[MAX_LEN - 1] = '\0';
+        tasks[task_count].has_due_date = 1;
+    }
+    
+    
     tasks[task_count].done = 0;
 
     task_count++;
@@ -67,8 +88,15 @@ int update_task(int index, const char* new_desc, const char* new_due_date) {
     strncpy(tasks[index].desc, new_desc, MAX_LEN - 1);
     tasks[index].desc[MAX_LEN - 1] = '\0';
 
-    strncpy(tasks[index].due_date, new_due_date, MAX_LEN - 1);
-    tasks[index].due_date[MAX_LEN - 1] = '\0';
+    // If new_due_date is an empty string, set has_due_date to 0
+    if (new_due_date == NULL || strlen(new_due_date) == 0) {
+        tasks[index].due_date[0] = '\0'; // Ensure the string is empty
+        tasks[index].has_due_date = 0;
+    } else {
+        strncpy(tasks[index].due_date, new_due_date, MAX_LEN - 1);
+        tasks[index].due_date[MAX_LEN - 1] = '\0';
+        tasks[index].has_due_date = 1;
+    }
 
     sort_tasks_by_due_date();
     return 0;
@@ -106,4 +134,10 @@ int is_task_done(int index) {
 const char* get_task_due_date(int index) {
     if (index < 0 || index >= task_count) return "";
     return tasks[index].due_date;
+}
+
+// New helper function to check if a task has a due date
+int has_task_due_date(int index) {
+    if (index < 0 || index >= task_count) return -1;
+    return tasks[index].has_due_date;
 }
