@@ -5,7 +5,6 @@ import sys
 import os
 import traceback
 import datetime
-import ant_ai as ant
 import subprocess # --- 新增：用於啟動外部程序 ---
 from tkinter import messagebox # --- 新增：用於顯示彈出訊息 ---
 
