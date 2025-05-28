@@ -4,7 +4,10 @@ from ctypes import c_char_p, c_int
 import sys
 import os
 import traceback
-import datetime # 新增：用於獲取當前年份和日期格式化
+import datetime
+import ant_ai as ant
+import subprocess # --- 新增：用於啟動外部程序 ---
+from tkinter import messagebox # --- 新增：用於顯示彈出訊息 ---
 
 # --- DLL Path Helper Function ---
 def get_dll_path(dll_name="todo.dll"):
@@ -12,6 +15,16 @@ def get_dll_path(dll_name="todo.dll"):
         return os.path.join(sys._MEIPASS, dll_name)
     else:
         return os.path.join(os.path.dirname(os.path.abspath(__file__)), dll_name)
+
+# --- 新增：Pygame Script Path Helper Function ---
+def get_pygame_path(script_name="ant_ai.py"):
+    """獲取 Pygame 腳本的路徑。"""
+    if getattr(sys, 'frozen', False):
+        # 如果是打包後的執行檔
+        return os.path.join(sys._MEIPASS, script_name)
+    else:
+        # 如果是直接執行的 .py 檔
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), script_name)
 
 # --- Optional Error Logging for PyInstaller Builds ---
 if getattr(sys, 'frozen', False):
@@ -28,6 +41,7 @@ try:
 except Exception as e:
     print(f"Error loading C library: {e}")
     print(f"Make sure '{get_dll_path()}' exists and is compiled for your system architecture.")
+    messagebox.showerror("啟動錯誤", f"載入 C 函式庫時發生錯誤:\n{e}\n\n請確認 '{get_dll_path()}' 存在且適用於您的系統。")
     sys.exit(1)
 
 lib.add_task.argtypes = [c_char_p, c_char_p]
@@ -99,10 +113,10 @@ def add_task(event=None):
     due = due_entry.get().strip()
     
     if not desc:
-        print("Please enter a task description.")
+        messagebox.showwarning("輸入提示", "請輸入任務描述。")
         return
 
-    # --- 新增：在 Python 端為 MM-DD HH:MM 格式的日期補上當前年份 ---
+    # --- 在 Python 端為 MM-DD HH:MM 格式的日期補上當前年份 ---
     processed_due_date = ""
     if due:
         try:
@@ -120,10 +134,12 @@ def add_task(event=None):
         due_entry.delete(0, tk.END)
         clear_selection_and_fields()
         desc_entry.focus_set()
+    else:
+        messagebox.showerror("錯誤", "新增任務失敗。")
 
 def mark_task_done():
     if current_selected_task_index == -1:
-        print("Please select a task to mark as done.")
+        messagebox.showwarning("選取提示", "請選取要標記為完成的任務。")
         return
     lib.mark_done(current_selected_task_index)
     update_task_list()
@@ -131,7 +147,7 @@ def mark_task_done():
 
 def delete_task():
     if current_selected_task_index == -1:
-        print("Please select a task to delete.")
+        messagebox.showwarning("選取提示", "請選取要刪除的任務。")
         return
     lib.delete_task(current_selected_task_index)
     update_task_list()
@@ -144,16 +160,16 @@ def clear_completed():
 
 def update_task():
     if current_selected_task_index == -1:
-        print("Select a task to update.")
+        messagebox.showwarning("選取提示", "請選取要更新的任務。")
         return
     new_desc = desc_entry.get().strip()
     new_due = due_entry.get().strip()
     
     if not new_desc:
-        print("Please enter a new task description.")
+        messagebox.showwarning("輸入提示", "請輸入新的任務描述。")
         return
     
-    # --- 新增：在 Python 端為 MM-DD HH:MM 格式的日期補上當前年份 (更新時) ---
+    # --- 在 Python 端為 MM-DD HH:MM 格式的日期補上當前年份 (更新時) ---
     processed_new_due_date = ""
     if new_due:
         try:
@@ -167,6 +183,8 @@ def update_task():
     if lib.update_task(current_selected_task_index, new_desc.encode(), processed_new_due_date.encode()) == 0: # 傳遞處理過的日期字串
         update_task_list()
         clear_selection_and_fields()
+    else:
+        messagebox.showerror("錯誤", "更新任務失敗。")
 
 def select_task_and_fill_fields(index):
     global current_selected_task_index
@@ -230,6 +248,26 @@ def highlight_selected_task():
                 task_display_text.see(item["start_index"])
                 break
 
+# --- 新增：啟動 Pygame 應用程式的函式 ---
+def launch_pygame_app():
+    """啟動 ant_ai.py (Pygame 應用程式) 作為一個獨立的程序。"""
+    pygame_script_path = get_pygame_path() # 使用輔助函式獲取路徑
+
+    try:
+        if not os.path.exists(pygame_script_path):
+            print(f"錯誤：找不到 Pygame 腳本 '{pygame_script_path}'。")
+            messagebox.showerror("錯誤", f"找不到 Pygame 腳本:\n{pygame_script_path}")
+            return
+
+        print(f"正在啟動 Pygame 應用程式: {pygame_script_path}...")
+        # 使用 Popen 啟動，這樣 Tkinter 視窗不會被凍結
+        subprocess.Popen([sys.executable, pygame_script_path])
+
+    except Exception as e:
+        print(f"啟動 Pygame 時發生錯誤: {e}")
+        print(traceback.format_exc())
+        messagebox.showerror("啟動錯誤", f"啟動 Pygame 時發生錯誤:\n{e}")
+
 # --- UI Setup ---
 root = tk.Tk()
 root.title("To-Do List Manager")
@@ -267,7 +305,6 @@ desc_entry.pack(pady=(0, 5))
 
 desc_entry.bind("<Return>", add_task)
 
-# --- 修改提示：不再包含年份 ---
 tk.Label(right_frame, text="Due Date (MM-DD HH:MM):").pack(pady=(0, 2))
 due_entry = tk.Entry(right_frame, width=40, font=('Arial', 10))
 due_entry.pack(pady=(0, 10))
@@ -289,6 +326,10 @@ delete_btn.pack(pady=5)
 
 clear_completed_btn = tk.Button(right_frame, text="Clear Completed", command=clear_completed, width=15)
 clear_completed_btn.pack(pady=5)
+
+# --- 新增：啟動 Pygame 的按鈕 ---
+pygame_btn = tk.Button(right_frame, text="dont know what to do?", command=launch_pygame_app, width=20) # 加點顏色區分
+pygame_btn.pack(pady=(15, 5)) # 增加一些頂部間距
 
 update_task_list()
 set_action_buttons_state(tk.DISABLED)
