@@ -4,7 +4,7 @@ from ctypes import c_char_p, c_int
 import sys
 import os
 import traceback
-import datetime # 新增：用於獲取當前年份和日期格式化
+import datetime
 
 # --- DLL Path Helper Function ---
 def get_dll_path(dll_name="todo.dll"):
@@ -51,6 +51,7 @@ lib.get_task_due_date.restype = c_char_p
 current_selected_task_index = -1
 task_text_ranges = []
 HIGHLIGHT_TAG = "selected_task_highlight"
+TASK_CURSOR_TAG = "task_cursor_tag" # 新增：用於游標變更的標籤
 
 # --- Core Task Management Functions (Python Wrappers) ---
 
@@ -66,21 +67,21 @@ def update_task_list():
     global task_text_ranges
     task_text_ranges = []
 
+    # 移除所有之前的游標綁定，避免重複
+    task_display_text.tag_remove(TASK_CURSOR_TAG, 1.0, tk.END)
+
     for i in range(lib.get_task_count()):
         desc = lib.get_task_desc(i).decode()
-        full_due_date_str = lib.get_task_due_date(i).decode() # 從 C 獲取完整日期字串
+        full_due_date_str = lib.get_task_due_date(i).decode()
         done = lib.is_task_done(i)
         symbol = "✔️" if done else "❌"
         
-        # 在 Python 端處理日期格式化，移除年份
         due_display = ""
         if full_due_date_str:
             try:
-                # 嘗試解析 YYYY-MM-DD HH:MM
                 dt_object = datetime.datetime.strptime(full_due_date_str, "%Y-%m-%d %H:%M")
-                due_display = dt_object.strftime(" (Due: %m-%d %H:%M)") # 格式化為 MM-DD HH:MM
+                due_display = dt_object.strftime(" (Due: %m-%d %H:%M)")
             except ValueError:
-                # 如果 C 端存儲了不符合預期的格式，則不顯示日期
                 pass
 
         display_text = f"{symbol} {desc}{due_display}\n"
@@ -89,10 +90,34 @@ def update_task_list():
         task_display_text.insert(tk.END, display_text)
         end_index = task_display_text.index(tk.END + "-1c")
 
-        task_text_ranges.append({"task_index": i, "start_index": start_index, "end_index": end_index})
+        task_info = {"task_index": i, "start_index": start_index, "end_index": end_index}
+        task_text_ranges.append(task_info)
+
+        # 為每個任務的文本範圍綁定游標變更事件
+        # 使用 lambda 函數傳遞當前任務的索引
+        task_display_text.tag_add(TASK_CURSOR_TAG, start_index, end_index)
+        task_display_text.tag_bind(TASK_CURSOR_TAG, "<Enter>", lambda event, idx=i: _on_task_enter(event, idx))
+        task_display_text.tag_bind(TASK_CURSOR_TAG, "<Leave>", lambda event, idx=i: _on_task_leave(event, idx))
+
 
     task_display_text.config(state=tk.DISABLED)
     highlight_selected_task()
+
+# 新增：滑鼠進入任務區域時改變游標
+def _on_task_enter(event, task_idx):
+    # 確保只在鼠標確實位於某個任務文本上時才改變游標
+    # 因為 tag_bind 可能會觸發多次，這是一個防禦性檢查
+    clicked_text_index = task_display_text.index(f"@{event.x},{event.y}")
+    for item in task_text_ranges:
+        if item["task_index"] == task_idx and \
+           task_display_text.compare(clicked_text_index, ">=", item["start_index"]) and \
+           task_display_text.compare(clicked_text_index, "<", item["end_index"]):
+            task_display_text.config(cursor="hand2") # "hand2" 是手形游標
+            break
+
+# 新增：滑鼠離開任務區域時恢復游標
+def _on_task_leave(event, task_idx):
+    task_display_text.config(cursor="arrow") # 恢復預設游標
 
 def add_task(event=None):
     desc = desc_entry.get().strip()
@@ -102,19 +127,16 @@ def add_task(event=None):
         print("Please enter a task description.")
         return
 
-    # --- 新增：在 Python 端為 MM-DD HH:MM 格式的日期補上當前年份 ---
     processed_due_date = ""
     if due:
         try:
-            # 檢查是否是 MM-DD HH:MM 格式
             datetime.datetime.strptime(due, "%m-%d %H:%M") 
             current_year = datetime.datetime.now().year
-            processed_due_date = f"{current_year}-{due}" # 補上當年年份
+            processed_due_date = f"{current_year}-{due}"
         except ValueError:
-            # 如果是 YYYY-MM-DD HH:MM 格式，或其它無法解析的，直接使用原始輸入
             processed_due_date = due
             
-    if lib.add_task(desc.encode(), processed_due_date.encode()) >= 0: # 傳遞處理過的日期字串
+    if lib.add_task(desc.encode(), processed_due_date.encode()) >= 0:
         update_task_list()
         desc_entry.delete(0, tk.END)
         due_entry.delete(0, tk.END)
@@ -153,18 +175,16 @@ def update_task():
         print("Please enter a new task description.")
         return
     
-    # --- 新增：在 Python 端為 MM-DD HH:MM 格式的日期補上當前年份 (更新時) ---
     processed_new_due_date = ""
     if new_due:
         try:
-            # 檢查是否是 MM-DD HH:MM 格式
             datetime.datetime.strptime(new_due, "%m-%d %H:%M") 
             current_year = datetime.datetime.now().year
-            processed_new_due_date = f"{current_year}-{new_due}" # 補上當年年份
+            processed_new_due_date = f"{current_year}-{new_due}"
         except ValueError:
             processed_new_due_date = new_due
 
-    if lib.update_task(current_selected_task_index, new_desc.encode(), processed_new_due_date.encode()) == 0: # 傳遞處理過的日期字串
+    if lib.update_task(current_selected_task_index, new_desc.encode(), processed_new_due_date.encode()) == 0:
         update_task_list()
         clear_selection_and_fields()
 
@@ -176,21 +196,20 @@ def select_task_and_fill_fields(index):
 
     current_selected_task_index = index
     desc = lib.get_task_desc(index).decode()
-    full_due = lib.get_task_due_date(index).decode() # 獲取完整日期
+    full_due = lib.get_task_due_date(index).decode()
 
-    # 在選取時，將完整日期格式化為 MM-DD HH:MM 填充到輸入框
     display_due = ""
     if full_due:
         try:
             dt_object = datetime.datetime.strptime(full_due, "%Y-%m-%d %H:%M")
             display_due = dt_object.strftime("%m-%d %H:%M")
         except ValueError:
-            display_due = full_due # 如果解析失敗，則顯示原始字串
+            display_due = full_due
 
     desc_entry.delete(0, tk.END)
     desc_entry.insert(0, desc)
     due_entry.delete(0, tk.END)
-    due_entry.insert(0, display_due) # 填充格式化後的日期
+    due_entry.insert(0, display_due)
     set_action_buttons_state(tk.NORMAL)
     highlight_selected_task()
 
@@ -250,8 +269,18 @@ left_frame.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
 task_display_text = tk.Text(left_frame, height=15, font=('Arial', 10), wrap=tk.WORD, state=tk.DISABLED, relief=tk.FLAT, bd=0)
 task_display_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
+# --- 禁用 Text Widget 的文字選取視覺效果 ---
+# 設置選取背景和前景顏色與普通文本相同，使其看起來沒有被選取
+task_display_text.config(
+    selectbackground=task_display_text.cget("background"), # 使用 Text 的背景色
+    selectforeground=task_display_text.cget("foreground")  # 使用 Text 的前景(文字)色
+)
+
 task_display_text.bind("<Button-1>", text_click_handler)
 task_display_text.tag_configure(HIGHLIGHT_TAG, background="SystemHighlight", foreground="white")
+
+# 定義游標變更的標籤樣式 (這裡不需要額外配置樣式，只需定義名稱)
+task_display_text.tag_configure(TASK_CURSOR_TAG)
 
 scrollbar = tk.Scrollbar(left_frame, orient="vertical", command=task_display_text.yview)
 scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -267,13 +296,11 @@ desc_entry.pack(pady=(0, 5))
 
 desc_entry.bind("<Return>", add_task)
 
-# --- 修改提示：不再包含年份 ---
 tk.Label(right_frame, text="Due Date (MM-DD HH:MM):").pack(pady=(0, 2))
 due_entry = tk.Entry(right_frame, width=40, font=('Arial', 10))
 due_entry.pack(pady=(0, 10))
 
 due_entry.bind("<Return>", add_task)
-
 
 add_btn = tk.Button(right_frame, text="Add Task", command=add_task, width=15)
 add_btn.pack(pady=5)
