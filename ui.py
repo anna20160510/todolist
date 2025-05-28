@@ -4,6 +4,7 @@ from ctypes import c_char_p, c_int
 import sys
 import os
 import datetime
+import traceback
 import subprocess # --- 新增：用於啟動外部程序 ---
 from tkinter import messagebox # --- 新增：用於顯示彈出訊息 ---
 
