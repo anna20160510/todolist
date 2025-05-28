@@ -9,8 +9,9 @@
 typedef struct {
     char desc[MAX_LEN];
     int done;
-    char due_date[MAX_LEN]; // 內部儲存完整的 YYYY-MM-DD HH:MM
+    char due_date[MAX_LEN]; // 內部儲存完整的YYYY-MM-DD HH:MM
     int id; // 用於記錄任務的創建順序
+    int pinned; // 新增: 0 = not pinned, 1 = pinned
 } Task;
 
 static Task tasks[MAX_TASKS];
@@ -33,7 +34,7 @@ time_t get_time_from_string(const char* date_str) {
     time_t current_time;
     struct tm *current_tm;
 
-    // 嘗試解析完整格式 YYYY-MM-DD HH:MM
+    // 嘗試解析完整格式YYYY-MM-DD HH:MM
     int year;
     if (sscanf(date_str, "%4d-%2d-%2d %2d:%2d", &year, &month, &day, &hour, &minute) == 5) {
         tm_time.tm_year = year - 1900;
@@ -71,7 +72,14 @@ int compare_due_date(const void *a, const void *b) {
     const Task *task_a = (const Task*)a;
     const Task *task_b = (const Task*)b;
 
-    // 判斷任務是否有有效的（非空）截止日期字串
+    // First, compare by pinned status
+    // Pinned tasks (1) come before unpinned tasks (0)
+    if (task_a->pinned != task_b->pinned) {
+        return task_b->pinned - task_a->pinned; // If task_a is pinned (1), task_b is not (0): 0 - 1 = -1 -> task_a comes before task_b
+                                                // If task_b is pinned (1), task_a is not (0): 1 - 0 = 1 -> task_b comes before task_a
+    }
+
+    // If both are pinned or both are unpinned, proceed with existing sorting logic
     int a_has_due_date_str = (task_a->due_date[0] != '\0');
     int b_has_due_date_str = (task_b->due_date[0] != '\0');
 
@@ -85,39 +93,32 @@ int compare_due_date(const void *a, const void *b) {
         time_b = get_time_from_string(task_b->due_date);
     }
 
-    // 判斷日期是否有效解析 (即便字串存在，解析也可能失敗)
     int a_is_valid_date = (time_a != (time_t)-1);
     int b_is_valid_date = (time_b != (time_t)-1);
 
-    // 優先處理沒有截止日期（或日期無效）的任務
-    // 如果 A 有效日期，B 無效日期 -> A 在前
+    // If A has a valid date and B does not -> A comes first
     if (a_is_valid_date && !b_is_valid_date) {
         return -1;
     }
-    // 如果 B 有效日期，A 無效日期 -> B 在前 (A 在後)
+    // If B has a valid date and A does not -> B comes first (A comes after)
     if (!a_is_valid_date && b_is_valid_date) {
         return 1;
     }
 
-    // 兩者都有有效截止日期：按時間排序 (早到晚)
+    // If both have valid due dates: sort by time (earlier to later)
     if (a_is_valid_date && b_is_valid_date) {
         return (time_a > time_b) - (time_a < time_b);
     }
 
-    // 兩者都沒有有效截止日期：按新增 ID 排序 (早到晚)
-    // 這裡我們不區分字串是否為空和解析失敗，只要 `is_valid_date` 為 false 就進入此邏輯
-    if (!a_is_valid_date && !b_is_valid_date) {
-        return (task_a->id > task_b->id) - (task_a->id < task_b->id);
-    }
-
-    return 0; // 理論上所有情況都已被處理
+    // If neither has a valid due date (or both are invalid): sort by creation ID (earlier to later)
+    return (task_a->id > task_b->id) - (task_a->id < task_b->id);
 }
 
 void sort_tasks_by_due_date() {
     qsort(tasks, task_count, sizeof(Task), compare_due_date);
 }
 
-// 輔助函數：將 MM-DD HH:MM 轉換為 YYYY-MM-DD HH:MM
+// 輔助函數：將 MM-DD HH:MM 轉換為YYYY-MM-DD HH:MM
 // 內部使用，不作為 DLL 導出
 static void format_due_date_with_year(char* dest, const char* src, size_t dest_len) {
     if (src == NULL || src[0] == '\0') {
@@ -130,7 +131,7 @@ static void format_due_date_with_year(char* dest, const char* src, size_t dest_l
     if (sscanf(src, "%2d-%2d %2d:%2d", &month, &day, &hour, &minute) == 4) {
         snprintf(dest, dest_len, "%04d-%02d-%02d %02d:%02d", get_current_year(), month, day, hour, minute);
     } else {
-        // 如果已經是 YYYY-MM-DD HH:MM 格式，直接複製
+        // 如果已經是YYYY-MM-DD HH:MM 格式，直接複製
         strncpy(dest, src, dest_len - 1);
         dest[dest_len - 1] = '\0';
     }
@@ -151,6 +152,7 @@ int add_task(const char* desc, const char* due_date) {
     }
     tasks[task_count].done = 0;
     tasks[task_count].id = next_id++; // 為新任務分配一個 ID
+    tasks[task_count].pinned = 0; // Initialize as not pinned
 
     task_count++;
     sort_tasks_by_due_date();
@@ -177,6 +179,7 @@ int update_task(int index, const char* new_desc, const char* new_due_date) {
 int mark_done(int index) {
     if (index < 0 || index >= task_count) return -1;
     tasks[index].done = 1;
+    sort_tasks_by_due_date(); // Re-sort after marking as done, in case it affects display order
     return 0;
 }
 
@@ -202,6 +205,20 @@ void clear_completed_tasks() {
     }
     task_count = j;
     sort_tasks_by_due_date(); // Re-sort after clearing
+}
+
+// Toggle the pinned status of a task
+int toggle_pin(int index) {
+    if (index < 0 || index >= task_count) return -1;
+    tasks[index].pinned = !tasks[index].pinned; // Toggle 0 to 1, or 1 to 0
+    sort_tasks_by_due_date(); // Re-sort after pinning/unpinning
+    return 0;
+}
+
+// Check if a task is pinned
+int is_task_pinned(int index) {
+    if (index < 0 || index >= task_count) return -1; // Return -1 for error, or an appropriate error code
+    return tasks[index].pinned;
 }
 
 int get_task_count() {

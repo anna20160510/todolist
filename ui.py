@@ -5,8 +5,11 @@ import sys
 import os
 import traceback
 import datetime
+
 import subprocess # --- 新增：用於啟動外部程序 ---
 from tkinter import messagebox # --- 新增：用於顯示彈出訊息 ---
+
+
 
 # --- DLL Path Helper Function ---
 def get_dll_path(dll_name="todo.dll"):
@@ -60,10 +63,17 @@ lib.is_task_done.restype = c_int
 lib.get_task_due_date.argtypes = [c_int]
 lib.get_task_due_date.restype = c_char_p
 
+# NEW: Pinning functions
+lib.toggle_pin.argtypes = [c_int]
+lib.toggle_pin.restype = c_int
+lib.is_task_pinned.argtypes = [c_int]
+lib.is_task_pinned.restype = c_int
+
 # --- Global variable to store selected task index ---
 current_selected_task_index = -1
 task_text_ranges = []
 HIGHLIGHT_TAG = "selected_task_highlight"
+TASK_CURSOR_TAG = "task_cursor_tag" # 新增：用於游標變更的標籤
 
 # --- Core Task Management Functions (Python Wrappers) ---
 
@@ -71,6 +81,7 @@ def set_action_buttons_state(state):
     update_btn.config(state=state)
     mark_done_btn.config(state=state)
     delete_btn.config(state=state)
+    pin_btn.config(state=state) # NEW: control pin button state
 
 def update_task_list():
     task_display_text.config(state=tk.NORMAL)
@@ -79,33 +90,59 @@ def update_task_list():
     global task_text_ranges
     task_text_ranges = []
 
+    # 移除所有之前的游標綁定，避免重複
+    task_display_text.tag_remove(TASK_CURSOR_TAG, 1.0, tk.END)
+
     for i in range(lib.get_task_count()):
         desc = lib.get_task_desc(i).decode()
-        full_due_date_str = lib.get_task_due_date(i).decode() # 從 C 獲取完整日期字串
+        full_due_date_str = lib.get_task_due_date(i).decode()
         done = lib.is_task_done(i)
-        symbol = "✔️" if done else "❌"
+        pinned = lib.is_task_pinned(i) # NEW: Get pinned status
+
+        done_symbol = "✔️" if done else "❌"
+        pin_symbol = "📌 " if pinned else "" # NEW: Add pin symbol if pinned
         
-        # 在 Python 端處理日期格式化，移除年份
         due_display = ""
         if full_due_date_str:
             try:
-                # 嘗試解析 YYYY-MM-DD HH:MM
                 dt_object = datetime.datetime.strptime(full_due_date_str, "%Y-%m-%d %H:%M")
-                due_display = dt_object.strftime(" (Due: %m-%d %H:%M)") # 格式化為 MM-DD HH:MM
+                due_display = dt_object.strftime(" (Due: %m-%d %H:%M)")
             except ValueError:
-                # 如果 C 端存儲了不符合預期的格式，則不顯示日期
                 pass
 
-        display_text = f"{symbol} {desc}{due_display}\n"
+        # NEW: Prepend pin_symbol to the display text
+        display_text = f"{pin_symbol}{done_symbol} {desc}{due_display}\n"
 
         start_index = task_display_text.index(tk.END + "-1c")
         task_display_text.insert(tk.END, display_text)
         end_index = task_display_text.index(tk.END + "-1c")
 
-        task_text_ranges.append({"task_index": i, "start_index": start_index, "end_index": end_index})
+        task_info = {"task_index": i, "start_index": start_index, "end_index": end_index}
+        task_text_ranges.append(task_info)
+
+        # 為每個任務的文本範圍綁定游標變更事件
+        task_display_text.tag_add(TASK_CURSOR_TAG, start_index, end_index)
+        task_display_text.tag_bind(TASK_CURSOR_TAG, "<Enter>", lambda event, idx=i: _on_task_enter(event, idx))
+        task_display_text.tag_bind(TASK_CURSOR_TAG, "<Leave>", lambda event, idx=i: _on_task_leave(event, idx))
 
     task_display_text.config(state=tk.DISABLED)
     highlight_selected_task()
+
+# 新增：滑鼠進入任務區域時改變游標
+def _on_task_enter(event, task_idx):
+    # 確保只在鼠標確實位於某個任務文本上時才改變游標
+    # 因為 tag_bind 可能會觸發多次，這是一個防禦性檢查
+    clicked_text_index = task_display_text.index(f"@{event.x},{event.y}")
+    for item in task_text_ranges:
+        if item["task_index"] == task_idx and \
+           task_display_text.compare(clicked_text_index, ">=", item["start_index"]) and \
+           task_display_text.compare(clicked_text_index, "<", item["end_index"]):
+            task_display_text.config(cursor="hand2") # "hand2" 是手形游標
+            break
+
+# 新增：滑鼠離開任務區域時恢復游標
+def _on_task_leave(event, task_idx):
+    task_display_text.config(cursor="arrow") # 恢復預設游標
 
 def add_task(event=None):
     desc = desc_entry.get().strip()
@@ -115,19 +152,22 @@ def add_task(event=None):
         messagebox.showwarning("輸入提示", "請輸入任務描述。")
         return
 
-    # --- 在 Python 端為 MM-DD HH:MM 格式的日期補上當前年份 ---
+
+
+
+
     processed_due_date = ""
     if due:
         try:
-            # 檢查是否是 MM-DD HH:MM 格式
+            # First, try to parse as MM-DD HH:MM to determine if current year needs to be prepended
             datetime.datetime.strptime(due, "%m-%d %H:%M") 
             current_year = datetime.datetime.now().year
-            processed_due_date = f"{current_year}-{due}" # 補上當年年份
+            processed_due_date = f"{current_year}-{due}"
         except ValueError:
-            # 如果是 YYYY-MM-DD HH:MM 格式，或其它無法解析的，直接使用原始輸入
+            # If it's not MM-DD HH:MM, assume it's already YYYY-MM-DD HH:MM or another valid format
             processed_due_date = due
             
-    if lib.add_task(desc.encode(), processed_due_date.encode()) >= 0: # 傳遞處理過的日期字串
+    if lib.add_task(desc.encode(), processed_due_date.encode()) >= 0:
         update_task_list()
         desc_entry.delete(0, tk.END)
         due_entry.delete(0, tk.END)
@@ -168,22 +208,37 @@ def update_task():
         messagebox.showwarning("輸入提示", "請輸入新的任務描述。")
         return
     
+
     # --- 在 Python 端為 MM-DD HH:MM 格式的日期補上當前年份 (更新時) ---
+
     processed_new_due_date = ""
     if new_due:
         try:
-            # 檢查是否是 MM-DD HH:MM 格式
             datetime.datetime.strptime(new_due, "%m-%d %H:%M") 
             current_year = datetime.datetime.now().year
-            processed_new_due_date = f"{current_year}-{new_due}" # 補上當年年份
+            processed_new_due_date = f"{current_year}-{new_due}"
         except ValueError:
             processed_new_due_date = new_due
 
-    if lib.update_task(current_selected_task_index, new_desc.encode(), processed_new_due_date.encode()) == 0: # 傳遞處理過的日期字串
+    if lib.update_task(current_selected_task_index, new_desc.encode(), processed_new_due_date.encode()) == 0:
         update_task_list()
         clear_selection_and_fields()
     else:
         messagebox.showerror("錯誤", "更新任務失敗。")
+
+# NEW: Toggle pin status for selected task
+def toggle_pin_task():
+    global current_selected_task_index
+    if current_selected_task_index == -1:
+        print("Please select a task to pin/unpin.")
+        return
+    
+    if lib.toggle_pin(current_selected_task_index) == 0:
+        update_task_list()
+        # After toggling, the index might change due to sorting, so clear selection
+        clear_selection_and_fields() 
+    else:
+        print("Error toggling pin status.")
 
 def select_task_and_fill_fields(index):
     global current_selected_task_index
@@ -193,23 +248,29 @@ def select_task_and_fill_fields(index):
 
     current_selected_task_index = index
     desc = lib.get_task_desc(index).decode()
-    full_due = lib.get_task_due_date(index).decode() # 獲取完整日期
+    full_due = lib.get_task_due_date(index).decode()
+    pinned = lib.is_task_pinned(index) # NEW: Get pinned status
 
-    # 在選取時，將完整日期格式化為 MM-DD HH:MM 填充到輸入框
     display_due = ""
     if full_due:
         try:
             dt_object = datetime.datetime.strptime(full_due, "%Y-%m-%d %H:%M")
             display_due = dt_object.strftime("%m-%d %H:%M")
         except ValueError:
-            display_due = full_due # 如果解析失敗，則顯示原始字串
+            display_due = full_due
 
     desc_entry.delete(0, tk.END)
     desc_entry.insert(0, desc)
     due_entry.delete(0, tk.END)
-    due_entry.insert(0, display_due) # 填充格式化後的日期
+    due_entry.insert(0, display_due)
     set_action_buttons_state(tk.NORMAL)
     highlight_selected_task()
+
+    # NEW: Update pin button text based on current task's pinned status
+    if pinned == 1:
+        pin_btn.config(text="Unpin Task")
+    else:
+        pin_btn.config(text="Pin Task")
 
 def text_click_handler(event):
     clicked_text_index = task_display_text.index(f"@{event.x},{event.y}")
@@ -235,6 +296,8 @@ def clear_selection_and_fields():
     desc_entry.delete(0, tk.END)
     due_entry.delete(0, tk.END)
     set_action_buttons_state(tk.DISABLED)
+    # NEW: Reset pin button text
+    pin_btn.config(text="Toggle Pin") 
     highlight_selected_task()
 
 def highlight_selected_task():
@@ -287,8 +350,18 @@ left_frame.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
 task_display_text = tk.Text(left_frame, height=15, font=('Arial', 10), wrap=tk.WORD, state=tk.DISABLED, relief=tk.FLAT, bd=0)
 task_display_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
+# --- 禁用 Text Widget 的文字選取視覺效果 ---
+# 設置選取背景和前景顏色與普通文本相同，使其看起來沒有被選取
+task_display_text.config(
+    selectbackground=task_display_text.cget("background"), # 使用 Text 的背景色
+    selectforeground=task_display_text.cget("foreground")  # 使用 Text 的前景(文字)色
+)
+
 task_display_text.bind("<Button-1>", text_click_handler)
 task_display_text.tag_configure(HIGHLIGHT_TAG, background="SystemHighlight", foreground="white")
+
+# 定義游標變更的標籤樣式 (這裡不需要額外配置樣式，只需定義名稱)
+task_display_text.tag_configure(TASK_CURSOR_TAG)
 
 scrollbar = tk.Scrollbar(left_frame, orient="vertical", command=task_display_text.yview)
 scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
@@ -310,7 +383,6 @@ due_entry.pack(pady=(0, 10))
 
 due_entry.bind("<Return>", add_task)
 
-
 add_btn = tk.Button(right_frame, text="Add Task", command=add_task, width=15)
 add_btn.pack(pady=5)
 
@@ -322,6 +394,10 @@ mark_done_btn.pack(pady=5)
 
 delete_btn = tk.Button(right_frame, text="Delete Task", command=delete_task, width=15, state=tk.DISABLED)
 delete_btn.pack(pady=5)
+
+# NEW: Pin/Unpin Button
+pin_btn = tk.Button(right_frame, text="Toggle Pin", command=toggle_pin_task, width=15, state=tk.DISABLED)
+pin_btn.pack(pady=5)
 
 clear_completed_btn = tk.Button(right_frame, text="Clear Completed", command=clear_completed, width=15)
 clear_completed_btn.pack(pady=5)
