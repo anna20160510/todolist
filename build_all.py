@@ -120,6 +120,7 @@ def build_exe():
         "--onefile",
         "--windowed",
         f"--add-binary={DLL_NAME};.",
+        "--add-binary=ant_ai.py;.",  # 👈 Add this line to bundle ant_ai.py
         PY_FILE
     ])
     if result.returncode != 0:

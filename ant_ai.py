@@ -156,7 +156,7 @@ class Food(pg.sprite.Sprite):
         food_list.append(list(self.rect.center))
 
 # --- 新增：主遊戲函式 ---
-def run_ant_simulation():
+def main():
     """這個函式包含了所有 Pygame 的啟動和執行邏輯。"""
     pg.init() # 將初始化移到這裡
     
@@ -224,6 +224,5 @@ def run_ant_simulation():
 
     pg.quit() # 結束 Pygame
 
-# --- 關鍵部分：確保只在直接執行時才跑遊戲 ---
 if __name__ == "__main__":
-    run_ant_simulation()
+    main()
