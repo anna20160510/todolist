@@ -11,29 +11,27 @@ STATE_RETURNING_HOME = 1
 WIDTH, HEIGHT = 800, 600
 ANT_SPEED = 2
 FOOD_AMOUNT = 15
+ANT_AMOUNT = 5
 FPS = 60
 ANT_INIT_VELOCITY_FACTOR = 0.3
 ANT_SMOOTHING_FACTOR = 0.05 # 慣性因子
 
 HOME_POSITION = (WIDTH // 2, HEIGHT // 2)
-HOME_RADIUS = 20  # 到達家判定半徑 (像素)
+HOME_RADIUS = 20  # 到家判定半徑
 
-# 全域變數 (只保留需要跨函式共用的，或者在主函式內處理)
 food_list = list()
 
-# 螞蟻類 (Ant Class - 您的程式碼，保持不變)
 class Ant(pg.sprite.Sprite):
     def __init__(self):
         super().__init__()
-        self.image_original_white = pg.Surface((10, 10)) # 保存原始白色圖像
-        self.image_original_white.fill((255, 255, 255))
-        self.image_original_yellow = pg.Surface((10, 10)) # 保存返家黃色圖像
-        self.image_original_yellow.fill((255, 255, 0)) # 黃色
+        self.image_white = pg.Surface((10, 10)) # 保存原始白色圖像
+        self.image_white.fill((255, 255, 255))
+        self.image_yellow = pg.Surface((10, 10)) # 保存返家黃色圖像
+        self.image_yellow.fill((255, 255, 0)) # 黃色
 
-        self.image = self.image_original_white.copy() # 當前使用的圖像
+        self.image = self.image_white.copy() # 當前使用的圖像
         self.rect = self.image.get_rect()
         
-        # 將螞蟻出生點改為家的位置
         spawn_margin = 20
         self.rect.center = (random.randint(spawn_margin, WIDTH - spawn_margin),
                             random.randint(spawn_margin, HEIGHT - spawn_margin))
@@ -50,7 +48,7 @@ class Ant(pg.sprite.Sprite):
         self.state = STATE_SEEKING_FOOD # 初始狀態為尋找食物
 
     def calculate_target_direction(self):
-        self.Total_x = 0 # 用於累加食物引力
+        self.Total_x = 0 
         self.Total_y = 0
         ant_center_x = self.rect.centerx
         ant_center_y = self.rect.centery
@@ -125,11 +123,11 @@ class Ant(pg.sprite.Sprite):
 
         # 更新螞蟻顏色根據狀態
         if self.state == STATE_SEEKING_FOOD:
-            if self.image is not self.image_original_white:
-                self.image = self.image_original_white.copy()
+            if self.image is not self.image_white:
+                self.image = self.image_white.copy()
         elif self.state == STATE_RETURNING_HOME:
-            if self.image is not self.image_original_yellow:
-                self.image = self.image_original_yellow.copy()
+            if self.image is not self.image_yellow:
+                self.image = self.image_yellow.copy()
 
         # 邊界反彈處理
         bounce_factor = -0.5
@@ -148,7 +146,6 @@ class Ant(pg.sprite.Sprite):
             if self.velocity_y > 0: self.velocity_y *= bounce_factor
 
 
-# 食物類 (Food Class - 您的程式碼，保持不變)
 class Food(pg.sprite.Sprite):
     def __init__(self):
         super().__init__()
@@ -162,7 +159,7 @@ class Food(pg.sprite.Sprite):
         global food_list
         food_list.append(list(self.rect.center))
 
-# --- 新增：主遊戲函式 ---
+#主遊戲函式
 def run_ant_simulation():
     """這個函式包含了所有 Pygame 的啟動和執行邏輯。"""
     pg.init() # 將初始化移到這裡
@@ -185,7 +182,7 @@ def run_ant_simulation():
         foods.add(food_item)
 
     # 建立螞蟻
-    for _ in range(5): 
+    for _ in range(ANT_AMOUNT): 
         ant_sprite = Ant()
         all_sprites.add(ant_sprite)
         ants.add(ant_sprite)
@@ -217,11 +214,8 @@ def run_ant_simulation():
         all_sprites.update()
 
         # 繪製畫面
-        screen.fill((0, 0, 0)) # 黑色背景
-        
-        # 繪製家 (藍色圓圈)
-        pg.draw.circle(screen, (0, 0, 255), HOME_POSITION, HOME_RADIUS, 1)
-
+        screen.fill((0, 0, 0)) 
+    
         # 繪製所有精靈
         all_sprites.draw(screen)
         
@@ -230,6 +224,5 @@ def run_ant_simulation():
 
     pg.quit() # 結束 Pygame
 
-# --- 關鍵部分：確保只在直接執行時才跑遊戲 ---
 if __name__ == "__main__":
     run_ant_simulation()
