@@ -4,21 +4,25 @@
 #include <stdlib.h>
 
 #define MAX_TASKS 100
-#define MAX_LEN 100 // 任務描述和日期字串的最大長度
+#define MAX_LEN 100 // Task description and date string max length
+#define FILENAME "tasks.txt" // Default filename for tasks
 
 typedef struct {
     char desc[MAX_LEN];
     int done;
-    char due_date[MAX_LEN]; // 內部儲存完整的YYYY-MM-DD HH:MM
-    int id; // 用於記錄任務的創建順序
-    int pinned; // 新增: 0 = not pinned, 1 = pinned
+    char due_date[MAX_LEN]; // Internal storage: YYYY-MM-DD HH:MM
+    int id; // Unique ID for creation order
+    int pinned; // 0 = not pinned, 1 = pinned
 } Task;
 
 static Task tasks[MAX_TASKS];
 static int task_count = 0;
-static int next_id = 0; // 用於產生唯一的任務ID
+static int next_id = 0; // For generating unique task IDs
 
-// 內部使用的輔助函數：獲取當前年份
+// Forward declaration for sort_tasks_by_due_date
+void sort_tasks_by_due_date(); 
+
+// Internal helper: get current year
 static int get_current_year() {
     time_t rawtime;
     struct tm *info;
@@ -27,14 +31,14 @@ static int get_current_year() {
     return info->tm_year + 1900;
 }
 
-// 解析 MM-DD HH:MM 格式字串，內部補足當前年份
+// Parse MM-DD HH:MM or YYYY-MM-DD HH:MM string to time_t
 time_t get_time_from_string(const char* date_str) {
     int month, day, hour, minute;
-    struct tm tm_time = {0};
+    struct tm tm_time = {0}; // Initialize to all zeros
     time_t current_time;
     struct tm *current_tm;
 
-    // 嘗試解析完整格式YYYY-MM-DD HH:MM
+    // Try parsing YYYY-MM-DD HH:MM
     int year;
     if (sscanf(date_str, "%4d-%2d-%2d %2d:%2d", &year, &month, &day, &hour, &minute) == 5) {
         tm_time.tm_year = year - 1900;
@@ -45,141 +49,120 @@ time_t get_time_from_string(const char* date_str) {
         return mktime(&tm_time);
     }
     
-    // 如果不是完整格式，則嘗試解析 MM-DD HH:MM，並補上當前年份
+    // Try parsing MM-DD HH:MM, using current year
     if (sscanf(date_str, "%2d-%2d %2d:%2d", &month, &day, &hour, &minute) == 4) {
         current_time = time(NULL);
         current_tm = localtime(&current_time);
 
-        tm_time.tm_year = current_tm->tm_year; // 使用當前年份
+        tm_time.tm_year = current_tm->tm_year; 
         tm_time.tm_mon  = month - 1;
         tm_time.tm_mday = day;
         tm_time.tm_hour = hour;
         tm_time.tm_min  = minute;
-        // 如果這個日期在當前時間之前，嘗試使用下一年
-        // 這是為了處理跨年的情況，例如在12月新增1月的任務
+        
         time_t parsed_time = mktime(&tm_time);
+        // If parsed date is in the past (e.g. adding Jan task in Dec), assume next year
         if (parsed_time != (time_t)-1 && parsed_time < current_time) {
-            tm_time.tm_year++; // 嘗試增加一年
+            tm_time.tm_year++; 
             parsed_time = mktime(&tm_time);
         }
         return parsed_time;
     }
-
-    return (time_t)-1; // Return error value if parsing fails
+    return (time_t)-1; // Parsing failed
 }
 
+// Comparison function for qsort
 int compare_due_date(const void *a, const void *b) {
     const Task *task_a = (const Task*)a;
     const Task *task_b = (const Task*)b;
 
-    // First, compare by pinned status
-    // Pinned tasks (1) come before unpinned tasks (0)
+    // Pinned tasks come first
     if (task_a->pinned != task_b->pinned) {
-        return task_b->pinned - task_a->pinned; // If task_a is pinned (1), task_b is not (0): 0 - 1 = -1 -> task_a comes before task_b
-                                                // If task_b is pinned (1), task_a is not (0): 1 - 0 = 1 -> task_b comes before task_a
+        return task_b->pinned - task_a->pinned;
     }
 
-    // If both are pinned or both are unpinned, proceed with existing sorting logic
     int a_has_due_date_str = (task_a->due_date[0] != '\0');
     int b_has_due_date_str = (task_b->due_date[0] != '\0');
-
-    time_t time_a = (time_t)-1; // 預設為無效時間
-    if (a_has_due_date_str) {
-        time_a = get_time_from_string(task_a->due_date);
-    }
-
-    time_t time_b = (time_t)-1; // 預設為無效時間
-    if (b_has_due_date_str) {
-        time_b = get_time_from_string(task_b->due_date);
-    }
-
+    time_t time_a = a_has_due_date_str ? get_time_from_string(task_a->due_date) : (time_t)-1;
+    time_t time_b = b_has_due_date_str ? get_time_from_string(task_b->due_date) : (time_t)-1;
     int a_is_valid_date = (time_a != (time_t)-1);
     int b_is_valid_date = (time_b != (time_t)-1);
 
-    // If A has a valid date and B does not -> A comes first
-    if (a_is_valid_date && !b_is_valid_date) {
-        return -1;
-    }
-    // If B has a valid date and A does not -> B comes first (A comes after)
-    if (!a_is_valid_date && b_is_valid_date) {
-        return 1;
-    }
+    if (a_is_valid_date && !b_is_valid_date) return -1; // A has date, B doesn't -> A first
+    if (!a_is_valid_date && b_is_valid_date) return 1;  // B has date, A doesn't -> B first
 
-    // If both have valid due dates: sort by time (earlier to later)
+    // Both have valid dates: sort by time
     if (a_is_valid_date && b_is_valid_date) {
-        return (time_a > time_b) - (time_a < time_b);
+        if (time_a < time_b) return -1;
+        if (time_a > time_b) return 1;
     }
 
-    // If neither has a valid due date (or both are invalid): sort by creation ID (earlier to later)
+    // Neither has valid date (or dates are equal): sort by creation ID
     return (task_a->id > task_b->id) - (task_a->id < task_b->id);
 }
 
+// Sort tasks
 void sort_tasks_by_due_date() {
     qsort(tasks, task_count, sizeof(Task), compare_due_date);
 }
 
-// 輔助函數：將 MM-DD HH:MM 轉換為YYYY-MM-DD HH:MM
-// 內部使用，不作為 DLL 導出
+// Helper to format MM-DD HH:MM to YYYY-MM-DD HH:MM
 static void format_due_date_with_year(char* dest, const char* src, size_t dest_len) {
     if (src == NULL || src[0] == '\0') {
         dest[0] = '\0';
         return;
     }
-    
     int month, day, hour, minute;
-    // 檢查輸入是否是 MM-DD HH:MM 格式
     if (sscanf(src, "%2d-%2d %2d:%2d", &month, &day, &hour, &minute) == 4) {
         snprintf(dest, dest_len, "%04d-%02d-%02d %02d:%02d", get_current_year(), month, day, hour, minute);
     } else {
-        // 如果已經是YYYY-MM-DD HH:MM 格式，直接複製
         strncpy(dest, src, dest_len - 1);
         dest[dest_len - 1] = '\0';
     }
 }
 
-
+// --- Task Management Functions ---
 int add_task(const char* desc, const char* due_date) {
-    if (task_count >= MAX_TASKS) return -1;
+    if (task_count >= MAX_TASKS) return -1; // Task list full
 
     strncpy(tasks[task_count].desc, desc, MAX_LEN - 1);
     tasks[task_count].desc[MAX_LEN - 1] = '\0';
 
     if (due_date != NULL && due_date[0] != '\0') {
-        // 在內部儲存完整的帶年份格式
         format_due_date_with_year(tasks[task_count].due_date, due_date, MAX_LEN);
     } else {
-        tasks[task_count].due_date[0] = '\0'; // Set to empty string if no due date is provided
+        tasks[task_count].due_date[0] = '\0';
     }
     tasks[task_count].done = 0;
-    tasks[task_count].id = next_id++; // 為新任務分配一個 ID
-    tasks[task_count].pinned = 0; // Initialize as not pinned
+    tasks[task_count].id = next_id++;
+    tasks[task_count].pinned = 0;
 
     task_count++;
     sort_tasks_by_due_date();
-    return task_count - 1;
+    return task_count - 1; // Return index of new task
 }
 
 int update_task(int index, const char* new_desc, const char* new_due_date) {
-    if (index < 0 || index >= task_count) return -1;
+    if (index < 0 || index >= task_count) return -1; // Invalid index
 
     strncpy(tasks[index].desc, new_desc, MAX_LEN - 1);
     tasks[index].desc[MAX_LEN - 1] = '\0';
 
     if (new_due_date != NULL && new_due_date[0] != '\0') {
-        // 在內部儲存完整的帶年份格式
         format_due_date_with_year(tasks[index].due_date, new_due_date, MAX_LEN);
     } else {
-        tasks[index].due_date[0] = '\0'; // Set to empty string if no new due date is provided
+        tasks[index].due_date[0] = '\0';
     }
 
     sort_tasks_by_due_date();
-    return 0;
+    return 0; // Success
 }
 
 int mark_done(int index) {
     if (index < 0 || index >= task_count) return -1;
     tasks[index].done = 1;
-    sort_tasks_by_due_date(); // Re-sort after marking as done, in case it affects display order
+    // Re-sorting might not be strictly necessary here unless 'done' status affects sort order directly
+    // sort_tasks_by_due_date(); 
     return 0;
 }
 
@@ -189,7 +172,7 @@ int delete_task(int index) {
         tasks[i] = tasks[i + 1];
     }
     task_count--;
-    sort_tasks_by_due_date(); // 刪除後也重新排序
+    // sort_tasks_by_due_date(); // Already sorted, or will be on next relevant op
     return 0;
 }
 
@@ -204,20 +187,19 @@ void clear_completed_tasks() {
         }
     }
     task_count = j;
-    sort_tasks_by_due_date(); // Re-sort after clearing
+    // sort_tasks_by_due_date(); // Re-sort if order might change
 }
 
-// Toggle the pinned status of a task
 int toggle_pin(int index) {
     if (index < 0 || index >= task_count) return -1;
-    tasks[index].pinned = !tasks[index].pinned; // Toggle 0 to 1, or 1 to 0
-    sort_tasks_by_due_date(); // Re-sort after pinning/unpinning
+    tasks[index].pinned = !tasks[index].pinned;
+    sort_tasks_by_due_date(); // Pin status affects sort order
     return 0;
 }
 
-// Check if a task is pinned
+// --- Getters ---
 int is_task_pinned(int index) {
-    if (index < 0 || index >= task_count) return -1; // Return -1 for error, or an appropriate error code
+    if (index < 0 || index >= task_count) return -1; 
     return tasks[index].pinned;
 }
 
@@ -237,6 +219,114 @@ int is_task_done(int index) {
 
 const char* get_task_due_date(int index) {
     if (index < 0 || index >= task_count) return "";
-    // 直接返回完整的日期字串，Python 端會處理格式化
     return tasks[index].due_date;
+}
+
+
+// --- Save and Load Functions ---
+
+// Saves tasks to the specified file.
+// Returns 0 on success, -1 on failure.
+int save_tasks_to_file(const char* filename) {
+    FILE* file = fopen(filename, "w");
+    if (file == NULL) {
+        perror("Error opening file for writing");
+        return -1;
+    }
+
+    // Write next_id first
+    fprintf(file, "%d\n", next_id);
+
+    // Write each task
+    for (int i = 0; i < task_count; i++) {
+        fprintf(file, "%d|%d|%d|%s|%s\n",
+                tasks[i].id,
+                tasks[i].done,
+                tasks[i].pinned,
+                tasks[i].due_date, // Due date can be empty, fprintf handles "" fine
+                tasks[i].desc);
+    }
+
+    if (fclose(file) != 0) {
+        perror("Error closing file after writing");
+        return -1; 
+    }
+    return 0; // Success
+}
+
+// Loads tasks from the specified file.
+// Returns 0 on success, 1 if file not found (treated as success with 0 tasks), -1 on parsing error.
+int load_tasks_from_file(const char* filename) {
+    FILE* file = fopen(filename, "r");
+    if (file == NULL) {
+        // File not found, likely first run. Initialize and return success.
+        task_count = 0;
+        next_id = 0;
+        return 1; // Indicate file not found, but operation is "successful" (empty list)
+    }
+
+    // Read next_id
+    if (fscanf(file, "%d\n", &next_id) != 1) {
+        // If next_id cannot be read (e.g., empty or malformed file)
+        fclose(file);
+        task_count = 0; // Reset state
+        next_id = 0;
+        if (feof(file)) return 1; // Empty file is like file not found
+        fprintf(stderr, "Error reading next_id from file.\n");
+        return -1; // Parsing error
+    }
+    
+    task_count = 0; // Reset task count before loading
+    char line_buffer[MAX_LEN * 4]; // Buffer for reading lines
+
+    while (fgets(line_buffer, sizeof(line_buffer), file) != NULL && task_count < MAX_TASKS) {
+        // Remove newline characters
+        line_buffer[strcspn(line_buffer, "\n\r")] = 0;
+
+        if (strlen(line_buffer) == 0) continue; // Skip empty lines
+
+        Task current_task = {0}; // Initialize task struct
+        char* p = line_buffer;
+        char* next_p;
+        int field_index = 0;
+
+        // Field 0: ID
+        next_p = strchr(p, '|');
+        if (next_p == NULL) { fprintf(stderr, "Malformed line (ID): %s\n", line_buffer); continue; }
+        *next_p = '\0';
+        current_task.id = atoi(p);
+        p = next_p + 1;
+
+        // Field 1: Done
+        next_p = strchr(p, '|');
+        if (next_p == NULL) { fprintf(stderr, "Malformed line (Done): %s\n", line_buffer); continue; }
+        *next_p = '\0';
+        current_task.done = atoi(p);
+        p = next_p + 1;
+
+        // Field 2: Pinned
+        next_p = strchr(p, '|');
+        if (next_p == NULL) { fprintf(stderr, "Malformed line (Pinned): %s\n", line_buffer); continue; }
+        *next_p = '\0';
+        current_task.pinned = atoi(p);
+        p = next_p + 1;
+
+        // Field 3: Due Date
+        next_p = strchr(p, '|');
+        if (next_p == NULL) { fprintf(stderr, "Malformed line (Due Date): %s\n", line_buffer); continue; }
+        *next_p = '\0';
+        strncpy(current_task.due_date, p, MAX_LEN - 1);
+        current_task.due_date[MAX_LEN - 1] = '\0';
+        p = next_p + 1;
+        
+        // Field 4: Description (rest of the string)
+        strncpy(current_task.desc, p, MAX_LEN - 1);
+        current_task.desc[MAX_LEN - 1] = '\0';
+
+        tasks[task_count++] = current_task;
+    }
+
+    fclose(file);
+    sort_tasks_by_due_date(); // Sort tasks after loading
+    return 0; // Success
 }
