@@ -1,4 +1,4 @@
-# To-Do List App with Ant AI Game (C + Python GUI)
+# To-Do List App with Small Game (C + Python GUI)
 
 This is a To-Do List application with a C backend for task management, a Python Tkinter GUI, and an integrated "Ant AI" Pygame simulation. It's designed for Windows and can be bundled into a standalone `.exe`.
 
