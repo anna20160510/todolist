@@ -63,10 +63,17 @@ def check_existing_dll(py_arch):
     else:
         print(f"\n(No DLL found — compile instructions shown above.)")
 
+def ensure_pyinstaller_installed():
+    try:
+        subprocess.run(["pyinstaller", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        return True
+    except Exception:
+        return False
+
 def compile_c():
     print("\n[Compiling] Building todo.dll...")
 
-    # Clean up old DLL and .a file
+    # Remove old files
     for file in [DLL_NAME, "libtodo.a"]:
         if os.path.exists(file):
             try:
@@ -76,17 +83,35 @@ def compile_c():
                 print(f"Could not delete {file}: {e}")
                 sys.exit(1)
 
-    # Now compile
+    # Run gcc
     result = subprocess.run([
         "gcc",
         "-shared", "-o", DLL_NAME,
         "-Wl,--out-implib,libtodo.a",
         "todo.c"
-    ])
+    ], capture_output=True, text=True)
+
     if result.returncode != 0:
-        print("Compilation failed.")
+        print("Compilation failed:")
+        print(result.stderr)
         sys.exit(1)
-    print("DLL compiled successfully.")
+
+    print("DLL compiled — verifying...")
+
+    if not os.path.exists(DLL_NAME):
+        print("❌ todo.dll was not created. Something went wrong.")
+        sys.exit(1)
+
+    arch = get_dll_arch(DLL_NAME)
+    py_arch = get_python_arch()
+    print(f"DLL Architecture Detected: {arch}")
+
+    if py_arch != arch:
+        print(f"❌ DLL architecture mismatch: Python is {py_arch}, but DLL is {arch}")
+        print("Make sure you’re using MinGW-w64 and targeting the correct bitness.")
+        sys.exit(1)
+
+    print("✅ DLL is valid and matches Python architecture.")
 
 def build_exe():
     print("\n[Bundling] Building executable with PyInstaller...")
@@ -95,6 +120,7 @@ def build_exe():
         "--onefile",
         "--windowed",
         f"--add-binary={DLL_NAME};.",
+        "--add-binary=ant_ai.py;.",  # 👈 Add this line to bundle ant_ai.py
         PY_FILE
     ])
     if result.returncode != 0:
@@ -111,15 +137,7 @@ def clean_up():
             os.remove(file)
     print("Cleanup complete.")
 
-def ensure_pyinstaller_installed():
-    try:
-        subprocess.run(["pyinstaller", "--version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-        return True
-    except Exception:
-        return False
-
 def main():
-    # Always work in the script’s directory
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
     log_file = open("build_log.txt", "w", encoding="utf-8")
@@ -139,16 +157,17 @@ def main():
     if ensure_pyinstaller_installed():
         build_exe()
         exe_path = os.path.join("dist", EXE_NAME)
-        print(f"\nAll done! Your app is ready here:\n{exe_path}")
+        print(f"\n[Success] Your .exe is ready at:\n{exe_path}")
     else:
-        print("\nNote: PyInstaller not found. Skipping executable build.")
+        print("\n[Warning] PyInstaller not found — .exe build skipped.")
         print("To install it, run: pip install pyinstaller")
+        print("You can still run ui.py manually after compiling todo.dll.")
 
     clean_up()
 
     sys.stdout = sys.__stdout__
     sys.stderr = sys.__stderr__
-    print("\nBuild finished successfully.")
+    print("\n✅ Build finished successfully.")
 
 if __name__ == "__main__":
     main()
