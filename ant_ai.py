@@ -18,6 +18,7 @@ ANT_SMOOTHING_FACTOR = 0.05 # 慣性因子
 
 HOME_POSITION = (WIDTH // 2, HEIGHT // 2)
 HOME_RADIUS = 20  # 到家判定半徑
+NEST_COLOR = (205, 133, 63)
 
 food_list = list()
 
@@ -214,6 +215,7 @@ def main():
             center_coords_to_remove = list(food_collided.rect.center)
             if center_coords_to_remove in food_list:
                 food_list.remove(center_coords_to_remove)
+                # print(food_list)
             
             for ant_involved in colliding_ants_list:
                 if isinstance(ant_involved, Ant):
@@ -235,6 +237,8 @@ def main():
         # 繪製畫面
         screen.fill((0, 0, 0)) 
     
+        pg.draw.circle(screen, NEST_COLOR, HOME_POSITION, HOME_RADIUS)
+
         # 繪製所有精靈
         all_sprites.draw(screen)
         
@@ -242,6 +246,7 @@ def main():
         pg.display.flip()
 
     pg.quit() # 結束 Pygame
+    sys.exit()
 
 if __name__ == "__main__":
     main()
