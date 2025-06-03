@@ -10,7 +10,7 @@ STATE_RETURNING_HOME = 1
 # 設定參數
 WIDTH, HEIGHT = 800, 600
 ANT_SPEED = 2
-FOOD_AMOUNT = 15
+FOOD_AMOUNT = 8
 ANT_AMOUNT = 5
 FPS = 60
 ANT_INIT_VELOCITY_FACTOR = 0.3
@@ -147,13 +147,17 @@ class Ant(pg.sprite.Sprite):
 
 
 class Food(pg.sprite.Sprite):
-    def __init__(self):
+    def __init__(self,center_pos = None):
         super().__init__()
         self.image = pg.Surface((10, 10))
         self.image.fill((255, 0, 0)) # 紅色
         self.rect = self.image.get_rect()
-        margin = 100
-        self.rect.center = (random.randint(margin, WIDTH - margin), random.randint(margin, HEIGHT - margin))
+
+        if center_pos:
+            self.rect.center = center_pos
+        else:
+            margin = 100
+            self.rect.center = (random.randint(margin, WIDTH - margin), random.randint(margin, HEIGHT - margin))
         
         # --- 修改：確保 food_list 是全域的，並加入 ---
         global food_list
@@ -162,7 +166,7 @@ class Food(pg.sprite.Sprite):
 # --- 主遊戲函式 ---
 def main():
     """這個函式包含了所有 Pygame 的啟動和執行邏輯。"""
-    pg.init() # 將初始化移到這裡
+    pg.init() # 初始化
     
     global food_list # 宣告我們要使用全域的 food_list
     food_list = [] # 每次啟動時清空列表，確保重新開始
@@ -195,6 +199,15 @@ def main():
             if event.type == pg.QUIT:
                 running = False
 
+            elif event.type == pg.MOUSEBUTTONDOWN:
+                if event.button == 1:
+                    mouse_pos = event.pos
+
+                new_food_item = Food(center_pos = mouse_pos) 
+                all_sprites.add(new_food_item)
+                foods.add(new_food_item)
+
+
         # 碰撞處理
         picked_foods_dict = pg.sprite.groupcollide(foods, ants, True, False)
         for food_collided, colliding_ants_list in picked_foods_dict.items():
@@ -206,9 +219,9 @@ def main():
                 if isinstance(ant_involved, Ant):
                     ant_involved.state = STATE_RETURNING_HOME
 
-            new_food = Food()
-            all_sprites.add(new_food)
-            foods.add(new_food)
+            #new_food = Food()
+            #all_sprites.add(new_food)
+            #foods.add(new_food)
 
         # 更新所有精靈
         all_sprites.update()
