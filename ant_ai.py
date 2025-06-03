@@ -223,6 +223,12 @@ def main():
             #all_sprites.add(new_food)
             #foods.add(new_food)
 
+        if len(food_list) == 0:
+            for i in range(2):
+                new_food = Food()
+                all_sprites.add(new_food)
+                foods.add(new_food)            
+
         # 更新所有精靈
         all_sprites.update()
 
