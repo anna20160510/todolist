@@ -203,10 +203,9 @@ def main():
             elif event.type == pg.MOUSEBUTTONDOWN:
                 if event.button == 1:
                     mouse_pos = event.pos
-
-                new_food_item = Food(center_pos = mouse_pos) 
-                all_sprites.add(new_food_item)
-                foods.add(new_food_item)
+                    new_food_item = Food(center_pos=mouse_pos)
+                    all_sprites.add(new_food_item)
+                    foods.add(new_food_item)
 
 
         # 碰撞處理
